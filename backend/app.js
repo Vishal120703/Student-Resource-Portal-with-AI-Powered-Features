@@ -2,9 +2,11 @@ import express from "express"
 import dotenv from "dotenv";
 import authRouter from "./routers/auth.router.js"
 import connectDB from "./config/db.js";
+import { connectRedis } from "./config/redis.js";
 
 dotenv.config();
 connectDB();
+await connectRedis();
 
 const app = express();
 const port = 3000||process.env.PORT;
