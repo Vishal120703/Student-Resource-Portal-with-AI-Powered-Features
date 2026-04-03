@@ -4,6 +4,7 @@ import { client } from "../config/redis.js";
 import crypto from "crypto";
 import User from "../models/auth.models.js";
 import bcrypt from "bcrypt";
+import { generateToken } from "../utils/jwt.js";
 import jwt from "jsonwebtoken";
 
 export const getAuth=(req,res)=>{
