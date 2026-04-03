@@ -14,7 +14,13 @@ const user = new mongoose.Schema({
     email:{
         type:String,
         lowercase:true,
+        unique:true,
         required:true
+    },
+    role:{
+        type:String,
+        enum:["Admin","Student","Teacher"],
+        default:"Student"
     },
     password:{
         type:String,
