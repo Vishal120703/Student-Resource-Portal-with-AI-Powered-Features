@@ -4,6 +4,6 @@ import { postQuestion } from "../controllers/Interview.controller.js";
 
 const router = express.Router();
 
-router.post("/",upload.single("file"),postQuestion);
+router.post("/",upload.single("resume"),postQuestion);
 
 export default router;

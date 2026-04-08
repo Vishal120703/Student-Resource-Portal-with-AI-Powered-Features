@@ -1,9 +1,14 @@
-import React from 'react'
+import { Routes, Route } from "react-router-dom";
+import InterviewSetup from "../pages/InterviewSetup.jsx";
+import Interview from "../pages/Interview.jsx";
 
-const App = () => {
+function App() {
   return (
-    <div>App</div>
-  )
+      <Routes>
+        <Route path="/" element={<InterviewSetup />} />
+        <Route path="/interview" element={<Interview />} />
+      </Routes>
+  );
 }
 
-export default App
+export default App;
