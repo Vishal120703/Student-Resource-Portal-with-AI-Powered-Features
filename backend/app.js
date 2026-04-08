@@ -13,7 +13,7 @@ connectDB();
 await connectRedis();
 
 const app = express();
-const port = 3000||process.env.PORT;
+const port = process.env.PORT||3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

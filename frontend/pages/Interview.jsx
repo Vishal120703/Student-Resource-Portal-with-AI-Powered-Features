@@ -141,13 +141,42 @@ function Interview() {
   };
 
   // 🏁 Finish Interview
-  const finishInterview = () => {
-    stopTimer();
-    stopListening();
-    clearInterval(totalTimerRef.current);
+  const finishInterview = async () => {
+  stopTimer();
+  stopListening();
+  clearInterval(totalTimerRef.current);
 
-    alert("Interview Completed!");
-  };
+  const finalAnswers = [
+    ...answers,
+    finalTranscript.current || "No answer",
+  ];
+
+  sessionStorage.setItem("answers", JSON.stringify(finalAnswers));
+
+  try {
+    console.log(questions);
+    console.log(answers);
+    const res = await fetch("http://localhost:5000/interview/evaluate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        questions,
+        answers: finalAnswers,
+      }),
+    });
+
+    const data = await res.json();
+
+    console.log("Evaluation:", data);
+
+    alert(`Score: ${data.score}/100`);
+  } catch (err) {
+    console.error(err);
+    alert("Evaluation failed");
+  }
+};
 
   // 🔁 On Question Change
   useEffect(() => {

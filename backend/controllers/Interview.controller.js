@@ -1,6 +1,7 @@
 import fs from "fs";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import {generateInterviewQuestions} from "../config/questionGeneration.js";
+import { evaluateWithAI } from "../config/result.js";
 
 const postQuestion = async(req,res)=>{
     try{
@@ -39,4 +40,38 @@ const postQuestion = async(req,res)=>{
     }
 }
 
-export {postQuestion};
+
+
+const evaluateInterview = async (req, res) => {
+  try {
+    const { questions, answers } = req.body;
+
+    if (!questions || !answers) {
+      return res.status(400).json({ msg: "Missing data" });
+    }
+
+    // Combine Q&A
+    let qaText = "";
+
+    for (let i = 0; i < questions.length; i++) {
+      qaText += `Q${i + 1}: ${questions[i]}\n`;
+      qaText += `A${i + 1}: ${answers[i]}\n\n`;
+    }
+
+    // 👉 Send to AI for evaluation
+    const evaluation = await evaluateWithAI(qaText);
+
+    console.log(evaluation);
+    // res.json(evaluation);
+    console.log(questions);
+    console.log(answers);
+    console.log("working");
+    return res.status(200).json("working");
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+export {postQuestion,evaluateInterview};
