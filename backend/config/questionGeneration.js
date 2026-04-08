@@ -1,41 +1,74 @@
-// import { SarvamAIClient } from "sarvamai";
+import { SarvamAIClient } from "sarvamai";
 
-// const client = new SarvamAIClient({
-//     apiSubscriptionKey: "sk_d808osnv_H79VewC72BLETiuUvaKYhjlL"
-// });
+const client = new SarvamAIClient({
+    apiSubscriptionKey: process.env.SARVAN_API
+});
 
-// export async function generateInterviewQuestions(text) {
-//     console.log(process.env.SARVAM_API);
-//     const prompt = `
-// You are an AI that generate questions for Interview
+async function generateInterviewQuestions(text, position, experience, mode) {
+    const prompt = `
+You are an expert interview question generator.
 
-// Rules:
-// - Generate EXACTLY 5 Questions
-// - Each Questions on Resume basis
-// - Output ONLY JSON
+Task:
+Generate EXACTLY 5 ${mode} interview questions based on the resume.
 
-// Format:
-// ["question1", "question2", "question3", "question4", "question5"]
+Context:
+- Position: ${position}
+- Experience: ${experience}
+- Mode: ${mode}
 
-// Content:
-// ${text}
-// `;
+Instructions:
+- Questions must be specific to the resume
+- ${mode === "hr"
+            ? "Focus on behavior, communication, and personality"
+            : "Focus on technical skills, concepts, and problem-solving"}
+- Avoid generic questions
 
-//     const response = await client.chat.completions({
-//         model: "sarvam-m",
-//         // temperature: 0.5,
-//         messages: [
-//             { role: "user", content: prompt }
-//         ]
-//     });
+STRICT OUTPUT RULE:
+Return ONLY a valid JSON array.
+No explanation, no text.
 
-//     // const output = response.choices[0].message.content;
-//    const output = response.choices[0].message.content;
+Format:
+["Q1", "Q2", "Q3", "Q4", "Q5"]
 
-//     try {
-//         return JSON.parse(output);
-//     } catch (error) {
-//         console.error("Failed to parse JSON:", output);
-//         return [];
-//     }
-// }
+Resume:
+${text.slice(0, 3000)}
+`;
+
+    try {
+        const response = await client.chat.completions({
+            model: "sarvam-m",
+            temperature: 0.3,
+            messages: [{ role: "user", content: prompt }]
+        });
+
+        let output = response?.choices?.[0]?.message?.content?.trim();
+
+        if (!output) throw new Error("Empty response from AI");
+
+        output = output.replace(/```json|```/g, "").trim();
+
+        const match = output.match(/\[.*\]/s);
+        if (!match) throw new Error("No JSON found in AI response");
+
+        const questions = JSON.parse(match[0]);
+
+        if (!Array.isArray(questions) || questions.length !== 5) {
+            throw new Error("Invalid question format");
+        }
+
+        return questions;
+
+    } catch (error) {
+        console.error("AI Error:", error.message);
+
+        return [
+            "Tell me about yourself.",
+            "What are your strengths?",
+            "Explain a project you worked on.",
+            "What challenges have you faced?",
+            "Why should we hire you?"
+        ];
+    }
+}
+
+export { generateInterviewQuestions };
