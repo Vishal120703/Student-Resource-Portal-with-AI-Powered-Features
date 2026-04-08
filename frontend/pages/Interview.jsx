@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 function Interview() {
+  const navigate = useNavigate();
+
   const questions = JSON.parse(sessionStorage.getItem("questions")) || [];
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState([]);
-  const [timeLeft, setTimeLeft] = useState(300); // per question
-  const [totalTime, setTotalTime] = useState(1800); // 30 min
+  const [timeLeft, setTimeLeft] = useState(300);
+  const [totalTime, setTotalTime] = useState(1800);
   const [liveText, setLiveText] = useState("");
 
   const timerRef = useRef(null);
   const totalTimerRef = useRef(null);
   const recognitionRef = useRef(null);
   const finalTranscript = useRef("");
-  const isInterviewActive = useRef(true);
 
   // 🎤 Speech Recognition Setup
   useEffect(() => {
@@ -50,7 +52,7 @@ function Interview() {
 
   // 🔊 Speak Question
   const speakQuestion = (text) => {
-    window.speechSynthesis.cancel(); // prevent repeat
+    window.speechSynthesis.cancel();
 
     const speech = new SpeechSynthesisUtterance(text);
 
@@ -62,8 +64,9 @@ function Interview() {
     window.speechSynthesis.speak(speech);
   };
 
-  // ⏱ Per Question Timer (5 min)
+  // ⏱ Per Question Timer
   const startTimer = () => {
+    clearInterval(timerRef.current);
     setTimeLeft(300);
 
     timerRef.current = setInterval(() => {
@@ -80,13 +83,13 @@ function Interview() {
 
   const stopTimer = () => clearInterval(timerRef.current);
 
-  // 🌍 Global Timer (30 min)
+  // 🌍 Total Timer
   useEffect(() => {
     totalTimerRef.current = setInterval(() => {
       setTotalTime((prev) => {
         if (prev <= 1) {
           clearInterval(totalTimerRef.current);
-          handleExit();
+          finishInterview();
           return 0;
         }
         return prev - 1;
@@ -96,15 +99,27 @@ function Interview() {
     return () => clearInterval(totalTimerRef.current);
   }, []);
 
-  // 🎤 Start / Stop Listening
+  // 🎤 Start Listening
   const startListening = () => {
+    if (!recognitionRef.current) return;
+
     finalTranscript.current = "";
     setLiveText("");
-    recognitionRef.current.start();
+
+    try {
+      recognitionRef.current.start();
+    } catch (err) {
+      console.log("Speech start error:", err);
+    }
   };
 
+  // 🎤 Stop Listening
   const stopListening = () => {
-    recognitionRef.current.stop();
+    try {
+      recognitionRef.current?.stop();
+    } catch (err) {
+      console.log("Speech stop error:", err);
+    }
   };
 
   // ▶️ Next Question
@@ -112,71 +127,72 @@ function Interview() {
     stopTimer();
     stopListening();
 
-    setAnswers((prev) => {
-      const updated = [...prev, finalTranscript.current || "No answer"];
-      sessionStorage.setItem("answers", JSON.stringify(updated));
-      return updated;
-    });
+    const answer = finalTranscript.current || "No answer";
+
+    const updatedAnswers = [...answers, answer];
+
+    setAnswers(updatedAnswers);
+    sessionStorage.setItem("answers", JSON.stringify(updatedAnswers));
 
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
-      finishInterview();
+      finishInterview(updatedAnswers);
     }
   };
 
-  // ❌ Exit Interview
-  const handleExit = () => {
+  // 🏁 Finish Interview (FINAL FIXED)
+  const finishInterview = async (existingAnswers = answers) => {
     stopTimer();
     stopListening();
-    isInterviewActive.current = false;
+    clearInterval(totalTimerRef.current);
 
-    setAnswers((prev) => {
-      const updated = [...prev, finalTranscript.current || "No answer"];
-      sessionStorage.setItem("answers", JSON.stringify(updated));
-      return updated;
-    });
+    // ✅ Ensure last answer is included
+    let finalAnswers;
 
-    alert("Interview Ended. Responses Saved.");
+    if (existingAnswers.length === questions.length) {
+      finalAnswers = existingAnswers;
+    } else {
+      finalAnswers = [
+        ...existingAnswers,
+        finalTranscript.current || "No answer",
+      ];
+    }
+
+    console.log("FINAL ANSWERS:", finalAnswers);
+
+    try {
+      const res = await fetch("http://localhost:5000/interview/evaluate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          questions,
+          answers: finalAnswers,
+        }),
+      });
+
+      const data = await res.json();
+
+      console.log("Evaluation:", data);
+
+      if (!data.success) {
+        alert("Evaluation failed");
+        return;
+      }
+
+      // ✅ Save result
+      sessionStorage.setItem("result", JSON.stringify(data.data));
+
+      // ✅ Navigate to result page
+      navigate("/result");
+
+    } catch (err) {
+      console.error(err);
+      alert("Evaluation failed");
+    }
   };
-
-  // 🏁 Finish Interview
-  const finishInterview = async () => {
-  stopTimer();
-  stopListening();
-  clearInterval(totalTimerRef.current);
-
-  const finalAnswers = [
-    ...answers,
-    finalTranscript.current || "No answer",
-  ];
-
-  sessionStorage.setItem("answers", JSON.stringify(finalAnswers));
-
-  try {
-    console.log(questions);
-    console.log(answers);
-    const res = await fetch("http://localhost:5000/interview/evaluate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        questions,
-        answers: finalAnswers,
-      }),
-    });
-
-    const data = await res.json();
-
-    console.log("Evaluation:", data);
-
-    alert(`Score: ${data.score}/100`);
-  } catch (err) {
-    console.error(err);
-    alert("Evaluation failed");
-  }
-};
 
   // 🔁 On Question Change
   useEffect(() => {
@@ -197,7 +213,7 @@ function Interview() {
 
       <p>{questions[currentIndex]}</p>
 
-      {/* ⏱ Per Question Timer */}
+      {/* ⏱ Question Timer */}
       <h3>
         ⏱ Question Time: {Math.floor(timeLeft / 60)}:
         {String(timeLeft % 60).padStart(2, "0")}
@@ -221,7 +237,10 @@ function Interview() {
 
       <button onClick={handleNext}>Next</button>
 
-      <button onClick={handleExit}>❌ Exit</button>
+      {/* ✅ FIXED Finish Button */}
+      <button onClick={() => finishInterview()}>
+        🏁 Finish
+      </button>
     </div>
   );
 }

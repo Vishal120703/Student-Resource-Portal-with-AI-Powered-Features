@@ -2,7 +2,7 @@ import fs from "fs";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import {generateInterviewQuestions} from "../config/questionGeneration.js";
 import { evaluateWithAI } from "../config/result.js";
-
+import Interview from "../models/interview.model.js";
 const postQuestion = async(req,res)=>{
     try{
         const file = req.file;
@@ -49,6 +49,8 @@ const evaluateInterview = async (req, res) => {
     if (!questions || !answers) {
       return res.status(400).json({ msg: "Missing data" });
     }
+    console.log(questions);
+    console.log(answers);
 
     // Combine Q&A
     let qaText = "";
@@ -57,16 +59,33 @@ const evaluateInterview = async (req, res) => {
       qaText += `Q${i + 1}: ${questions[i]}\n`;
       qaText += `A${i + 1}: ${answers[i]}\n\n`;
     }
+    console.log(qaText);
 
     // 👉 Send to AI for evaluation
     const evaluation = await evaluateWithAI(qaText);
-
     console.log(evaluation);
-    // res.json(evaluation);
-    console.log(questions);
-    console.log(answers);
-    console.log("working");
-    return res.status(200).json("working");
+    if (!evaluation || typeof evaluation.score !== "number") {
+  console.log("AI FAILED:", evaluation);
+  return res.status(500).json({ msg: "AI failed" });
+}
+
+    const savedInterview = await Interview.create({
+      userId: req.user?.id || null, // if auth exists
+      questions,
+      answers,
+      score: evaluation.score,
+      communication: evaluation.communication,
+      technical: evaluation.technical,
+      confidence: evaluation.confidence,
+      strengths: evaluation.strengths,
+      weaknesses: evaluation.weaknesses,
+      suggestions: evaluation.suggestions,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: savedInterview,
+    });
 
   } catch (err) {
     console.error(err);
@@ -74,4 +93,16 @@ const evaluateInterview = async (req, res) => {
   }
 };
 
-export {postQuestion,evaluateInterview};
+const getInterviewHistory = async (req, res) => {
+  try {
+    const interviews = await Interview.find({
+      userId: req.user?.id,
+    }).sort({ createdAt: 1 });
+
+    res.json(interviews);
+  } catch (err) {
+    res.status(500).json({ msg: "Error fetching history" });
+  }
+};
+
+export {postQuestion,evaluateInterview,getInterviewHistory};
