@@ -47,6 +47,11 @@ function Interview() {
       setLiveText(finalTranscript.current + interim);
     };
 
+    // ✅ important: detect stop
+    recognition.onend = () => {
+      console.log("🎤 Mic fully stopped");
+    };
+
     recognitionRef.current = recognition;
   }, []);
 
@@ -113,19 +118,36 @@ function Interview() {
     }
   };
 
-  // 🎤 Stop Listening
+  // 🎤 Stop Listening (🔥 FIXED)
   const stopListening = () => {
-    try {
-      recognitionRef.current?.stop();
-    } catch (err) {
-      console.log("Speech stop error:", err);
-    }
+    return new Promise((resolve) => {
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.onend = () => {
+            console.log("🎤 Fully stopped");
+            resolve();
+          };
+
+          recognitionRef.current.stop();
+          recognitionRef.current.abort();
+
+          // fallback (important)
+          setTimeout(resolve, 300);
+        } else {
+          resolve();
+        }
+      } catch (err) {
+        console.log("Speech stop error:", err);
+        resolve();
+      }
+    });
   };
 
-  // ▶️ Next Question
-  const handleNext = () => {
+  // ▶️ Next Question (🔥 FIXED)
+  const handleNext = async () => {
     stopTimer();
-    stopListening();
+
+    await stopListening(); // ✅ wait until mic stops
 
     const answer = finalTranscript.current || "No answer";
 
@@ -141,13 +163,15 @@ function Interview() {
     }
   };
 
-  // 🏁 Finish Interview (FINAL FIXED)
+  // 🏁 Finish Interview (🔥 FIXED)
   const finishInterview = async (existingAnswers = answers) => {
     stopTimer();
-    stopListening();
-    clearInterval(totalTimerRef.current);
 
-    // ✅ Ensure last answer is included
+    await stopListening(); // ✅ wait here too
+
+    clearInterval(totalTimerRef.current);
+    window.speechSynthesis.cancel(); // 🔥 stop speaker instantly
+
     let finalAnswers;
 
     if (existingAnswers.length === questions.length) {
@@ -175,19 +199,13 @@ function Interview() {
 
       const data = await res.json();
 
-      console.log("Evaluation:", data);
-
       if (!data.success) {
         alert("Evaluation failed");
         return;
       }
 
-      // ✅ Save result
       sessionStorage.setItem("result", JSON.stringify(data.data));
-
-      // ✅ Navigate to result page
       navigate("/result");
-
     } catch (err) {
       console.error(err);
       alert("Evaluation failed");
@@ -203,6 +221,16 @@ function Interview() {
     return () => stopTimer();
   }, [currentIndex]);
 
+  // 🔥 CLEANUP ON EXIT
+  useEffect(() => {
+    return () => {
+      stopListening();
+      window.speechSynthesis.cancel();
+      clearInterval(timerRef.current);
+      clearInterval(totalTimerRef.current);
+    };
+  }, []);
+
   if (!questions.length) {
     return <h2>No questions found. Go back and start again.</h2>;
   }
@@ -213,31 +241,26 @@ function Interview() {
 
       <p>{questions[currentIndex]}</p>
 
-      {/* ⏱ Question Timer */}
       <h3>
         ⏱ Question Time: {Math.floor(timeLeft / 60)}:
         {String(timeLeft % 60).padStart(2, "0")}
       </h3>
 
-      {/* 🌍 Total Timer */}
       <h3>
         🕒 Total Time Left: {Math.floor(totalTime / 60)}:
         {String(totalTime % 60).padStart(2, "0")}
       </h3>
 
-      {/* 🎤 Live Speech */}
       <p>🎤 {liveText || "Start speaking..."}</p>
 
       <br />
 
-      {/* Buttons */}
       <button onClick={() => speakQuestion(questions[currentIndex])}>
         🔁 Repeat
       </button>
 
       <button onClick={handleNext}>Next</button>
 
-      {/* ✅ FIXED Finish Button */}
       <button onClick={() => finishInterview()}>
         🏁 Finish
       </button>
