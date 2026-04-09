@@ -11,19 +11,33 @@ function Interview() {
   const [timeLeft, setTimeLeft] = useState(300);
   const [totalTime, setTotalTime] = useState(1800);
   const [liveText, setLiveText] = useState("");
+  const [started, setStarted] = useState(false); // 🔥 important
 
   const timerRef = useRef(null);
   const totalTimerRef = useRef(null);
   const recognitionRef = useRef(null);
   const finalTranscript = useRef("");
 
-  // 🎤 Speech Recognition Setup
+  const cheatCountRef = useRef(0);
+  const isTerminatedRef = useRef(false);
+
+  // 🔲 Fullscreen
+  const enterFullscreen = () => {
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) elem.requestFullscreen();
+  };
+
+  const exitFullscreen = () => {
+    if (document.exitFullscreen) document.exitFullscreen();
+  };
+
+  // 🎤 Speech setup
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Speech Recognition not supported");
+      alert("Speech not supported");
       return;
     }
 
@@ -47,15 +61,40 @@ function Interview() {
       setLiveText(finalTranscript.current + interim);
     };
 
-    // ✅ important: detect stop
-    recognition.onend = () => {
-      console.log("🎤 Mic fully stopped");
-    };
-
     recognitionRef.current = recognition;
   }, []);
 
-  // 🔊 Speak Question
+  // 🎤 Start Listening
+  const startListening = () => {
+    finalTranscript.current = "";
+    setLiveText("");
+
+    try {
+      recognitionRef.current.start();
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  // 🎤 Stop Listening
+  const stopListening = () => {
+    return new Promise((resolve) => {
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.onend = () => resolve();
+          recognitionRef.current.stop();
+          recognitionRef.current.abort();
+          setTimeout(resolve, 300);
+        } else {
+          resolve();
+        }
+      } catch {
+        resolve();
+      }
+    });
+  };
+
+  // 🔊 Speak
   const speakQuestion = (text) => {
     window.speechSynthesis.cancel();
 
@@ -69,7 +108,7 @@ function Interview() {
     window.speechSynthesis.speak(speech);
   };
 
-  // ⏱ Per Question Timer
+  // ⏱ Timer
   const startTimer = () => {
     clearInterval(timerRef.current);
     setTimeLeft(300);
@@ -90,11 +129,13 @@ function Interview() {
 
   // 🌍 Total Timer
   useEffect(() => {
+    if (!started) return;
+
     totalTimerRef.current = setInterval(() => {
       setTotalTime((prev) => {
         if (prev <= 1) {
           clearInterval(totalTimerRef.current);
-          finishInterview();
+          finishInterviewSafe();
           return 0;
         }
         return prev - 1;
@@ -102,88 +143,28 @@ function Interview() {
     }, 1000);
 
     return () => clearInterval(totalTimerRef.current);
-  }, []);
+  }, [started]);
 
-  // 🎤 Start Listening
-  const startListening = () => {
-    if (!recognitionRef.current) return;
+  // 🛡 Safe Finish
+  const finishInterviewSafe = async (existing = answers) => {
+    if (isTerminatedRef.current) return;
 
-    finalTranscript.current = "";
-    setLiveText("");
-
-    try {
-      recognitionRef.current.start();
-    } catch (err) {
-      console.log("Speech start error:", err);
-    }
+    isTerminatedRef.current = true;
+    await finishInterview(existing);
   };
 
-  // 🎤 Stop Listening (🔥 FIXED)
-  const stopListening = () => {
-    return new Promise((resolve) => {
-      try {
-        if (recognitionRef.current) {
-          recognitionRef.current.onend = () => {
-            console.log("🎤 Fully stopped");
-            resolve();
-          };
-
-          recognitionRef.current.stop();
-          recognitionRef.current.abort();
-
-          // fallback (important)
-          setTimeout(resolve, 300);
-        } else {
-          resolve();
-        }
-      } catch (err) {
-        console.log("Speech stop error:", err);
-        resolve();
-      }
-    });
-  };
-
-  // ▶️ Next Question (🔥 FIXED)
-  const handleNext = async () => {
+  // 🏁 Finish
+  const finishInterview = async (existing = answers) => {
     stopTimer();
-
-    await stopListening(); // ✅ wait until mic stops
-
-    const answer = finalTranscript.current || "No answer";
-
-    const updatedAnswers = [...answers, answer];
-
-    setAnswers(updatedAnswers);
-    sessionStorage.setItem("answers", JSON.stringify(updatedAnswers));
-
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      finishInterview(updatedAnswers);
-    }
-  };
-
-  // 🏁 Finish Interview (🔥 FIXED)
-  const finishInterview = async (existingAnswers = answers) => {
-    stopTimer();
-
-    await stopListening(); // ✅ wait here too
-
+    await stopListening();
     clearInterval(totalTimerRef.current);
-    window.speechSynthesis.cancel(); // 🔥 stop speaker instantly
+    window.speechSynthesis.cancel();
+    exitFullscreen();
 
-    let finalAnswers;
-
-    if (existingAnswers.length === questions.length) {
-      finalAnswers = existingAnswers;
-    } else {
-      finalAnswers = [
-        ...existingAnswers,
-        finalTranscript.current || "No answer",
-      ];
-    }
-
-    console.log("FINAL ANSWERS:", finalAnswers);
+    const finalAnswers =
+      existing.length === questions.length
+        ? existing
+        : [...existing, finalTranscript.current || "No answer"];
 
     try {
       const res = await fetch("http://localhost:5000/interview/evaluate", {
@@ -191,37 +172,83 @@ function Interview() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          questions,
-          answers: finalAnswers,
-        }),
+        body: JSON.stringify({ questions, answers: finalAnswers }),
       });
 
       const data = await res.json();
-
-      if (!data.success) {
-        alert("Evaluation failed");
-        return;
-      }
-
       sessionStorage.setItem("result", JSON.stringify(data.data));
       navigate("/result");
-    } catch (err) {
-      console.error(err);
-      alert("Evaluation failed");
+    } catch {
+      alert("Error submitting interview");
     }
   };
 
-  // 🔁 On Question Change
+  // 🚫 Anti-cheat
   useEffect(() => {
-    if (questions.length) {
-      speakQuestion(questions[currentIndex]);
+    if (!started) return;
+
+    const handleViolation = (type) => {
+      if (isTerminatedRef.current) return;
+
+      cheatCountRef.current++;
+
+      alert(`⚠️ ${type} (${cheatCountRef.current}/3)`);
+
+      if (cheatCountRef.current >= 3) {
+        alert("❌ Auto-submitted!");
+        finishInterviewSafe();
+      }
+    };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) handleViolation("Tab Switch");
+    });
+
+    window.addEventListener("blur", () =>
+      handleViolation("Window Switch")
+    );
+
+    document.addEventListener("copy", (e) => {
+      e.preventDefault();
+      handleViolation("Copy");
+    });
+
+    document.addEventListener("paste", (e) => {
+      e.preventDefault();
+      handleViolation("Paste");
+    });
+
+    document.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      handleViolation("Right Click");
+    });
+
+  }, [started]);
+
+  // ▶️ Start Interview (IMPORTANT FIX)
+  const startInterview = () => {
+    enterFullscreen();
+    speakQuestion(questions[currentIndex]);
+    setStarted(true);
+  };
+
+  // ▶️ Next
+  const handleNext = async () => {
+    stopTimer();
+    await stopListening();
+
+    const updated = [...answers, finalTranscript.current || "No answer"];
+    setAnswers(updated);
+
+    if (currentIndex < questions.length - 1) {
+      setCurrentIndex((p) => p + 1);
+      speakQuestion(questions[currentIndex + 1]);
+    } else {
+      finishInterviewSafe(updated);
     }
+  };
 
-    return () => stopTimer();
-  }, [currentIndex]);
-
-  // 🔥 CLEANUP ON EXIT
+  // 🔥 Cleanup
   useEffect(() => {
     return () => {
       stopListening();
@@ -231,10 +258,24 @@ function Interview() {
     };
   }, []);
 
+  // 🛑 No Questions
   if (!questions.length) {
-    return <h2>No questions found. Go back and start again.</h2>;
+    return <h2>No questions found</h2>;
   }
 
+  // 🚀 START SCREEN
+  if (!started) {
+    return (
+      <div style={{ textAlign: "center", marginTop: "100px" }}>
+        <h2>Ready to Start Interview?</h2>
+        <button onClick={startInterview}>
+          ▶️ Start Interview
+        </button>
+      </div>
+    );
+  }
+
+  // 🎯 MAIN UI
   return (
     <div style={{ padding: "20px" }}>
       <h2>Question {currentIndex + 1}</h2>
@@ -242,28 +283,19 @@ function Interview() {
       <p>{questions[currentIndex]}</p>
 
       <h3>
-        ⏱ Question Time: {Math.floor(timeLeft / 60)}:
+        ⏱ {Math.floor(timeLeft / 60)}:
         {String(timeLeft % 60).padStart(2, "0")}
       </h3>
 
       <h3>
-        🕒 Total Time Left: {Math.floor(totalTime / 60)}:
+        🕒 {Math.floor(totalTime / 60)}:
         {String(totalTime % 60).padStart(2, "0")}
       </h3>
 
       <p>🎤 {liveText || "Start speaking..."}</p>
 
-      <br />
-
-      <button onClick={() => speakQuestion(questions[currentIndex])}>
-        🔁 Repeat
-      </button>
-
       <button onClick={handleNext}>Next</button>
-
-      <button onClick={() => finishInterview()}>
-        🏁 Finish
-      </button>
+      <button onClick={() => finishInterviewSafe()}>Finish</button>
     </div>
   );
 }
